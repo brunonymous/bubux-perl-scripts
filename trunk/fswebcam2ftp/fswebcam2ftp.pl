@@ -28,9 +28,10 @@ use Net::FTP;
 use Getopt::Std;
 use Net::SMTP::TLS;
 use Sys::Syslog;
+use Sys::Hostname;
 use vars qw($VERSION);
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
-$VERSION                            = '0.5.1';
+$VERSION                            = '0.5.2';
 my $isVerbose       = 0;
 my $isDebug         = 0;
 my $isTest          = 0;
@@ -124,6 +125,10 @@ sub listProcess {
 ## @method void sendMailProcess()
 sub sendMailProcess {
     print "sendMailProcess\n";
+    sendMail(
+        'This is a simple test message.',
+        "Just a quick message that validates the operation of sending e-mails."
+    );
 
 }
 
@@ -202,6 +207,38 @@ sub fswebcam {
 
     return $pathname;
 
+}
+
+sub sendMail {
+    my ( $subject, $body ) = @_;
+    $subject = '' if !defined $subject;
+    $body = 'Empty message' if !defined $body;
+
+    $subject = hostname() . ' ' . $Script . ': ' . $subject;
+    my @params = (
+        $smtp_ref->{'host'},
+        'Hello'    => $smtp_ref->{'hello'},
+        'Port'     => $smtp_ref->{'port'},
+        'User'     => $smtp_ref->{'user'},
+        'Password' => $smtp_ref->{'password'},
+        'Debug'    => $isDebug
+    );
+    my $smtp = new Net::SMTP::TLS(@params);
+    print Dumper \@params;
+    $smtp->mail( $smtp_ref->{'from'} );
+    $smtp->to( $smtp_ref->{'to'} );
+    $smtp->data();
+    $smtp->datasend( 'From: ' . $smtp_ref->{'from'} . "\n" );
+    $smtp->datasend( 'Reply-to: ' . $smtp_ref->{'from'} . "\n" );
+    $smtp->datasend( 'User-Agent: '
+            . 'Mozilla/5.0 (X11; Linux x86_64; rv:9.0) Gecko/20111229 Thunderbird/9.0'
+            . "\n" );
+    $smtp->datasend( 'To: ' . $smtp_ref->{'to'} . "\n" );
+    $smtp->datasend( 'Subject: ' . $subject . "\n" );
+    $smtp->datasend("\n");
+    $smtp->datasend( $body . "\n" );
+    $smtp->dataend();
+    $smtp->quit();
 }
 
 ## @method void init()
