@@ -2,7 +2,7 @@
 # @author Bruno Ethvignot <bruno at tlk.biz>
 # @created 2012-02-04
 # @date 2012-02-11
-# https://bubux-perl-scripts.googlecode.com/svn/trunk/fswebcam2ftp
+# http://code.google.com/p/bubux-perl-scripts/
 #
 # copyright (c) 2012 TLK Games all rights reserved
 # $Id$
@@ -32,13 +32,13 @@ use Sys::Syslog;
 use Sys::Hostname;
 use vars qw($VERSION);
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
-$VERSION                            = '0.5.2';
+$VERSION                            = '0.8.0';
 my $isVerbose       = 0;
 my $isDebug         = 0;
 my $isTest          = 0;
 my $loopMax         = 0;
 my $putSuccessCount = 0;
-my $putTryCount     = 0;
+my $putTryCount     = 5;
 my $configFileName  = 'fswebcam2ftp.conf';
 my $actionSelected;
 my $ftp;
@@ -60,6 +60,7 @@ eval {
 if ($@) {
     sayError($@);
     sayError("(!) fswebcam2ftp.pl failed!");
+    sendMail( "The $Bin script crashed", "message: $@" );
     die $@;
 }
 
@@ -107,10 +108,16 @@ sub fswebcam2ftpProcess {
                 $putTryCount = 5;
             };
             if ($@) {
+                my $error = $@;
+                sayError($error);
+                sayInfo("We try $putTryCount more times.");
                 $putSuccessCount = 0;
-
-                if ( $putTryCount < 1 ) {
-                    die $@;
+                sendMail(
+                    'FTP transfer error: ' . $putTryCount,
+                    'An FTP error occurred:  ' . $error
+                );
+                if ( $putTryCount <= 1 ) {
+                    die $error;
                 }
                 ftpLogin();
                 $putTryCount--;
@@ -128,7 +135,6 @@ sub listProcess {
 
 ## @method void sendMailProcess()
 sub sendMailProcess {
-    print "sendMailProcess\n";
     sendMail(
         'This is a simple test message.',
         "Just a quick message that validates the operation of sending e-mails."
@@ -191,7 +197,8 @@ sub fswebcam {
 
     my $lineColours_ref = $fswebcam_ref->{'line-coulours'};
     $fswebcam_ref->{'line-coulours-index'} = 0
-        if $fswebcam_ref->{'line-coulours-index'} >= scalar(@$lineColours_ref);
+        if $fswebcam_ref->{'line-coulours-index'}
+            >= scalar(@$lineColours_ref);
     my $lineColour
         = $lineColours_ref->[ $fswebcam_ref->{'line-coulours-index'} ];
     $fswebcam_ref->{'line-coulours-index'}++;
@@ -226,8 +233,16 @@ sub fswebcam {
 
 }
 
+##@method void sendMail($subject, $body)
+#@brief Send an e-mail
+#@param string $subject The subject of the message
+#@param string $body The body of the email
 sub sendMail {
     my ( $subject, $body ) = @_;
+    if ( !defined $smtp_ref or !$smtp_ref->{'enable'} ) {
+        sayInfo("Sending email is disabled");
+        return;
+    }
     $subject = '' if !defined $subject;
     $body = 'Empty message' if !defined $body;
 
@@ -241,21 +256,19 @@ sub sendMail {
         'Debug'    => $isDebug
     );
     my $smtp = new Net::SMTP::TLS(@params);
-    print Dumper \@params;
     $smtp->mail( $smtp_ref->{'from'} );
     $smtp->to( $smtp_ref->{'to'} );
     $smtp->data();
-    $smtp->datasend( 'From: ' . $smtp_ref->{'from'} . "\n" );
+    $smtp->datasend(
+        'From: ' . $smtp_ref->{'name'} . ' <' . $smtp_ref->{'from'} . ">\n" );
     $smtp->datasend( 'Reply-to: ' . $smtp_ref->{'from'} . "\n" );
-    $smtp->datasend( 'User-Agent: '
-            . 'Mozilla/5.0 (X11; Linux x86_64; rv:9.0) Gecko/20111229 Thunderbird/9.0'
-            . "\n" );
     $smtp->datasend( 'To: ' . $smtp_ref->{'to'} . "\n" );
     $smtp->datasend( 'Subject: ' . $subject . "\n" );
     $smtp->datasend("\n");
     $smtp->datasend( $body . "\n" );
     $smtp->dataend();
     $smtp->quit();
+    sayDebug("The email has been sent to $smtp_ref->{'to'}");
 }
 
 ## @method void init()
@@ -325,7 +338,8 @@ sub readConfig {
         if ( $smtp_ref->{'enable'} ) {
             isBool( $smtp_ref, 'tls' );
             foreach
-                my $name ( 'host', 'hello', 'user', 'password', 'from', 'to' )
+                my $name ( 'host', 'hello', 'user', 'password', 'from', 'to',
+                'name' )
             {
                 isString( $smtp_ref, $name );
             }
@@ -474,7 +488,7 @@ ENDTXT
 ## @method void VERSION_MESSAGE()
 sub VERSION_MESSAGE {
     print STDOUT <<ENDTXT;
-    $Script $VERSION (2012-02-06) 
+    $Script $VERSION (2012-02-11) 
     Copyright (C) 2012 TLK Games 
     Written by Bruno Ethvignot. 
 ENDTXT
