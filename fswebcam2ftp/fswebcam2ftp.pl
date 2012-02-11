@@ -1,7 +1,8 @@
 #!/usr/bin/perl
 # @author Bruno Ethvignot <bruno at tlk.biz>
 # @created 2012-02-04
-# @date 2012-02-06
+# @date 2012-02-11
+# https://bubux-perl-scripts.googlecode.com/svn/trunk/fswebcam2ftp
 #
 # copyright (c) 2012 TLK Games all rights reserved
 # $Id$
@@ -93,12 +94,15 @@ sub fswebcam2ftpProcess {
     while (1) {
         $count++;
         sayDebug("Loop $count");
-        my $filename = fswebcam();
+        my ( $pathname, $filenameTmp, $filename ) = fswebcam();
         if ( !$isTest ) {
             eval {
-                $ftp->put($filename)
-                    or die sayError( 'put failed: ' . $ftp->message() );
-                sayInfo("put $filename successful");
+                $ftp->put($pathname)
+                    or die sayError(
+                    'put($pathname) was failed: ' . $ftp->message() );
+                sayInfo("put $pathname successful");
+                $ftp->rename( $filenameTmp, $filename );
+                sayInfo("rename to $filename successful");
                 $putSuccessCount++;
                 $putTryCount = 5;
             };
@@ -158,6 +162,7 @@ sub ftpLogin {
     $ftp->cwd( $ftp_ref->{'pathname'} )
         or die sayError( 'Can\'t cwd to ' . $ftp_ref->{'pathname'} );
     my @files = $ftp->ls();
+    $ftp->binary();
 
     foreach my $filename (@files) {
         if ($showList) {
@@ -177,11 +182,21 @@ sub fswebcam {
         $fswebcam_ref->{'filename'},
         $fswebcam_ref->{'image-counter'}
     );
-    my $pathname = $fswebcam_ref->{'pathname'} . '/' . $filename;
+    my $filenameTmp = $Script . '_tempo_' . $filename;
+    my $pathname    = $fswebcam_ref->{'pathname'} . '/' . $filenameTmp;
 
     my $cmd = $fswebcam_ref->{'fswebcam'} . ' -r '
         . $fswebcam_ref->{'resolution'};
     $cmd .= ' -q ' if !$isDebug;
+
+    my $lineColours_ref = $fswebcam_ref->{'line-coulours'};
+    $fswebcam_ref->{'line-coulours-index'} = 0
+        if $fswebcam_ref->{'line-coulours-index'} >= scalar(@$lineColours_ref);
+    my $lineColour
+        = $lineColours_ref->[ $fswebcam_ref->{'line-coulours-index'} ];
+    $fswebcam_ref->{'line-coulours-index'}++;
+    my $info = $fswebcam_ref->{'info'};
+    $info .= ' ' . $filename if $isDebug;
 
     $cmd
         .= ' --title "'
@@ -189,8 +204,10 @@ sub fswebcam {
         . ' --subtitle "'
         . $fswebcam_ref->{'subtitle'} . '"'
         . ' --info "'
-        . $fswebcam_ref->{'info'} . '"'
+        . $info . '"'
         . ' --log syslog '
+        . ' --line-colour '
+        . $lineColour . ' '
         . $pathname;
 
     sayDebug("$cmd");
@@ -205,7 +222,7 @@ sub fswebcam {
         if $fswebcam_ref->{'image-counter'}
             > $fswebcam_ref->{'image-counter-max'};
 
-    return $pathname;
+    return ( $pathname, $filenameTmp, $filename );
 
 }
 
@@ -285,7 +302,7 @@ sub readConfig {
         $fswebcam_ref = getHash( \%config, 'fswebcam' );
         foreach my $name (
             'pathname', 'resolution', 'filename', 'title',
-            'subtitle', 'info'
+            'subtitle', 'info',       'line-colours'
             )
         {
             isString( $fswebcam_ref, $name );
@@ -294,6 +311,13 @@ sub readConfig {
         isInt( $fswebcam_ref, 'image-counter-max' );
         die "bad image dimension ($fswebcam_ref->{'resolution'} ) "
             if $fswebcam_ref->{'resolution'} !~ m{^\d+x\d+$};
+        uc( $fswebcam_ref->{'line-coulours'} );
+        my @lineColours = split( /,/, $fswebcam_ref->{'line-colours'} );
+        foreach my $colour (@lineColours) {
+            die "'$colour' is not a hexa value" if $colour !~ m{^[A-F0-9]+$};
+        }
+        $fswebcam_ref->{'line-coulours'}       = \@lineColours;
+        $fswebcam_ref->{'line-coulours-index'} = 0;
 
         # Reads SMTP configuration
         $smtp_ref = getHash( \%config, 'smtp' );
