@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 # @author Bruno Ethvignot <bruno at tlk.biz>
 # @created 2012-02-04
-# @date 2012-02-11
+# @date 2012-02-13
 # http://code.google.com/p/bubux-perl-scripts/
 #
 # copyright (c) 2012 TLK Games all rights reserved
@@ -30,9 +30,10 @@ use Getopt::Std;
 use Net::SMTP::TLS;
 use Sys::Syslog;
 use Sys::Hostname;
+use Time::HiRes qw ( gettimeofday tv_interval );
 use vars qw($VERSION);
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
-$VERSION                            = '0.8.0';
+$VERSION                            = '0.8.2';
 my $isVerbose       = 0;
 my $isDebug         = 0;
 my $isTest          = 0;
@@ -58,10 +59,11 @@ eval {
     run();
 };
 if ($@) {
-    sayError($@);
+    my $error = $@;
+    sayError($error);
     sayError("(!) fswebcam2ftp.pl failed!");
-    sendMail( "The $Bin script crashed", "message: $@" );
-    die $@;
+    sendMail( "The $Bin script crashed", "message: $error" );
+    die $error;
 }
 
 ## @method void END()
@@ -95,6 +97,7 @@ sub fswebcam2ftpProcess {
     while (1) {
         $count++;
         sayDebug("Loop $count");
+        my $t0 = [gettimeofday];
         my ( $pathname, $filenameTmp, $filename ) = fswebcam();
         if ( !$isTest ) {
             eval {
@@ -122,6 +125,10 @@ sub fswebcam2ftpProcess {
                 ftpLogin();
                 $putTryCount--;
             }
+            my $elapsed = tv_interval($t0);
+            sayInfo(  'Time of capture and upload has lasted ' 
+                    . $elapsed
+                    . ' seconds' );
         }
         last if $loopMax > 0 and $count >= $loopMax;
     }
@@ -227,7 +234,7 @@ sub fswebcam {
     $fswebcam_ref->{'image-counter'}++;
     $fswebcam_ref->{'image-counter'} = 0
         if $fswebcam_ref->{'image-counter'}
-            > $fswebcam_ref->{'image-counter-max'};
+            >= $fswebcam_ref->{'image-counter-max'};
 
     return ( $pathname, $filenameTmp, $filename );
 
@@ -488,7 +495,7 @@ ENDTXT
 ## @method void VERSION_MESSAGE()
 sub VERSION_MESSAGE {
     print STDOUT <<ENDTXT;
-    $Script $VERSION (2012-02-11) 
+    $Script $VERSION (2012-02-13) 
     Copyright (C) 2012 TLK Games 
     Written by Bruno Ethvignot. 
 ENDTXT
